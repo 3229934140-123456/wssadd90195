@@ -103,6 +103,17 @@ export default function Dashboard() {
             <div className="space-y-3">
               {recentPlans.map((plan) => {
                 const customer = customers.find((c) => c.id === plan.customerId);
+                const approvalBadge = plan.approvalStatus === 'pending'
+                  ? { cls: 'risk-badge-yellow', text: '审批中' }
+                  : plan.approvalStatus === 'approved'
+                    ? { cls: 'risk-badge-green', text: '已通过' }
+                    : plan.approvalStatus === 'rejected'
+                      ? { cls: 'risk-badge-red', text: '已驳回' }
+                      : plan.status === 'completed'
+                        ? { cls: 'risk-badge-green', text: '已成交' }
+                        : plan.status === 'submitted'
+                          ? { cls: 'risk-badge-yellow', text: '已提交' }
+                          : null;
                 return (
                   <div key={plan.id} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
                     <div className="flex items-center gap-3">
@@ -113,6 +124,11 @@ export default function Dashboard() {
                       <span className="text-xs text-slate-400">
                         ¥{(plan.amount / 10000).toFixed(1)}万 · 赠{(plan.giftRatio * 100).toFixed(0)}%
                       </span>
+                      {approvalBadge && (
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${approvalBadge.cls}`}>
+                          {approvalBadge.text}
+                        </span>
+                      )}
                     </div>
                     <span className="text-xs text-slate-400">
                       {new Date(plan.createdAt).toLocaleDateString('zh-CN')}

@@ -31,6 +31,9 @@ export interface RechargeRecord {
   consultantId: string;
 }
 
+export type PaymentMethod = 'cash' | 'bank_card' | 'wechat' | 'alipay' | 'other';
+export type PayerRelation = 'self' | 'family' | 'friend' | 'company' | 'other';
+
 export interface RechargePlan {
   id: string;
   customerId: string;
@@ -40,6 +43,8 @@ export interface RechargePlan {
   boundProjects: string[];
   validityPeriod: number;
   specialNotes: string;
+  paymentMethod: PaymentMethod;
+  payerRelation: PayerRelation;
   riskLevel: 'green' | 'yellow' | 'red';
   riskDetails: RiskDetail[];
   approvalStatus: 'none' | 'pending' | 'approved' | 'rejected';

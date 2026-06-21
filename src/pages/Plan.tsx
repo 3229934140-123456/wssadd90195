@@ -2,9 +2,26 @@ import { useState, useMemo, useCallback } from 'react';
 import {
   User, DollarSign, Gift, FolderOpen, Clock, FileText,
   CheckCircle2, AlertTriangle, ShieldAlert, ChevronDown, ChevronUp, Send, Sparkles,
+  CreditCard, Banknote, Users, Wallet, Building, HeartHandshake,
 } from 'lucide-react';
 import { useAppStore, projectList } from '@/store';
-import type { RiskDetail, RechargePlan } from '@/types';
+import type { RiskDetail, RechargePlan, PaymentMethod, PayerRelation } from '@/types';
+
+const PAYMENT_METHODS: { key: PaymentMethod; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: 'cash', label: '现金', icon: Banknote },
+  { key: 'bank_card', label: '银行卡', icon: CreditCard },
+  { key: 'wechat', label: '微信', icon: Wallet },
+  { key: 'alipay', label: '支付宝', icon: Wallet },
+  { key: 'other', label: '其他', icon: Wallet },
+];
+
+const PAYER_RELATIONS: { key: PayerRelation; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: 'self', label: '本人', icon: User },
+  { key: 'family', label: '家属', icon: Users },
+  { key: 'friend', label: '朋友', icon: HeartHandshake },
+  { key: 'company', label: '公司', icon: Building },
+  { key: 'other', label: '其他', icon: Users },
+];
 
 export default function Plan() {
   const { customers, addPlan, validatePlan, currentConsultant, selectedCustomerId, setSelectedCustomerId } = useAppStore();
@@ -13,7 +30,12 @@ export default function Plan() {
   const [giftRatio, setGiftRatio] = useState(5);
   const [boundProjects, setBoundProjects] = useState<string[]>([]);
   const [validityPeriod, setValidityPeriod] = useState(12);
-  const [specialNotes, setSpecialNotes] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('bank_card');
+  const [payerRelation, setPayerRelation] = useState<PayerRelation>('self');
+  const [notesOld, setNotesOld] = useState('');
+  const [notesCash, setNotesCash] = useState('');
+  const [notesFamily, setNotesFamily] = useState('');
+  const [notesOther, setNotesOther] = useState('');
   const [expandedRisk, setExpandedRisk] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
@@ -24,8 +46,8 @@ export default function Plan() {
 
   const risks: RiskDetail[] = useMemo(() => {
     if (!customer) return [];
-    return validatePlan(customer.id, amount, giftRatio / 100, boundProjects, validityPeriod);
-  }, [customer, amount, giftRatio, boundProjects, validityPeriod, validatePlan]);
+    return validatePlan(customer.id, amount, giftRatio / 100, boundProjects, validityPeriod, paymentMethod, payerRelation);
+  }, [customer, amount, giftRatio, boundProjects, validityPeriod, paymentMethod, payerRelation, validatePlan]);
 
   const highestLevel = useMemo(() => {
     if (risks.some((r) => r.level === 'red')) return 'red';
@@ -33,10 +55,19 @@ export default function Plan() {
     return 'green';
   }, [risks]);
 
-  const showSpecialNotes = useMemo(
-    () => !!customer && (customer.age > 65 || amount >= 50000),
-    [customer, amount],
-  );
+  const needOldNotes = risks.some((r) => r.type === '高龄客户');
+  const needCashNotes = risks.some((r) => r.type === '大额现金');
+  const needFamilyNotes = risks.some((r) => r.type === '亲友代付' || r.type === '代付关系' || r.type === '公司代付');
+
+  const allNotesFilled = useMemo(() => {
+    if (needOldNotes && !notesOld.trim()) return false;
+    if (needCashNotes && !notesCash.trim()) return false;
+    if (needFamilyNotes && !notesFamily.trim() && !notesOther.trim()) {
+      if (payerRelation === 'other' && !notesOther.trim()) return false;
+      if (payerRelation !== 'other' && !notesFamily.trim()) return false;
+    }
+    return true;
+  }, [needOldNotes, needCashNotes, needFamilyNotes, notesOld, notesCash, notesFamily, notesOther, payerRelation]);
 
   const conflictingPackages = useMemo(() => {
     if (!customer) return [];
@@ -51,6 +82,13 @@ export default function Plan() {
 
   const handleSubmit = () => {
     if (!customer) return;
+    if (!allNotesFilled) return;
+    const allNotes = [
+      needOldNotes ? `【高龄客户】${notesOld}` : '',
+      needCashNotes ? `【大额现金】${notesCash}` : '',
+      needFamilyNotes ? (payerRelation === 'other' ? `【代付关系】${notesOther}` : `【亲友代付】${notesFamily}`) : '',
+    ].filter(Boolean).join('\n');
+
     const plan: RechargePlan = {
       id: `rp_${Date.now()}`,
       customerId: customer.id,
@@ -59,23 +97,26 @@ export default function Plan() {
       giftRatio: giftRatio / 100,
       boundProjects,
       validityPeriod,
-      specialNotes,
+      specialNotes: allNotes,
+      paymentMethod,
+      payerRelation,
       riskLevel: highestLevel,
       riskDetails: risks,
       approvalStatus: highestLevel === 'red' ? 'pending' : 'none',
       createdAt: new Date().toISOString(),
-      status: 'draft',
+      status: 'submitted',
     };
     addPlan(plan);
     setSubmitted(true);
-    setTimeout(() => setSubmitted(false), 3000);
+    setTimeout(() => setSubmitted(false), 4000);
   };
 
   const trafficColors = { green: 'bg-mint shadow-[0_0_20px_rgba(52,211,153,0.5)]', yellow: 'bg-amber shadow-[0_0_20px_rgba(245,158,11,0.5)]', red: 'bg-coral shadow-[0_0_20px_rgba(232,93,80,0.5)]' };
+  const canSubmit = !!customer && allNotesFilled && boundProjects.length > 0;
 
   return (
     <div className="flex h-full gap-6 p-6">
-      <div className="w-[60%] space-y-5 overflow-auto">
+      <div className="w-[60%] space-y-5 overflow-auto pb-6">
         <h1 className="section-title flex items-center gap-2">
           <Sparkles className="w-5 h-5 text-navy-500" /> 方案试算
         </h1>
@@ -124,7 +165,7 @@ export default function Plan() {
             </div>
             <div>
               <label className="text-xs text-slate-500 mb-1.5 flex items-center gap-1">
-                <FolderOpen className="w-3.5 h-3.5" /> 绑定项目
+                <FolderOpen className="w-3.5 h-3.5" /> 绑定项目（按项目分别校验活动规则）
               </label>
               <div className="flex flex-wrap gap-2">
                 {projectList.map((p) => (
@@ -146,23 +187,89 @@ export default function Plan() {
           </div>
         </section>
 
-        {showSpecialNotes && (
-          <section className="card-base p-5 animate-slide-up border-amber-200">
-            <h2 className="text-sm font-bold text-amber-700 mb-3 flex items-center gap-2">
-              <FileText className="w-4 h-4" /> 补充说明
-              <span className="text-[10px] font-normal text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded">需填写</span>
+        <section className="card-base p-5">
+          <h2 className="text-sm font-bold text-navy-600 mb-3 flex items-center gap-2">
+            <CreditCard className="w-4 h-4" /> 第三步：支付信息
+          </h2>
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs text-slate-500 mb-2 block">支付方式</label>
+              <div className="grid grid-cols-5 gap-2">
+                {PAYMENT_METHODS.map((pm) => (
+                  <button
+                    key={pm.key}
+                    onClick={() => setPaymentMethod(pm.key)}
+                    className={`flex flex-col items-center gap-1 py-2.5 rounded-lg border text-xs font-medium transition-all ${paymentMethod === pm.key ? 'border-navy-400 bg-navy-50 text-navy-700 shadow-sm' : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50'}`}
+                  >
+                    <pm.icon className="w-4 h-4" />
+                    {pm.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-2 block">付款人与客户关系</label>
+              <div className="grid grid-cols-5 gap-2">
+                {PAYER_RELATIONS.map((pr) => (
+                  <button
+                    key={pr.key}
+                    onClick={() => setPayerRelation(pr.key)}
+                    className={`flex flex-col items-center gap-1 py-2.5 rounded-lg border text-xs font-medium transition-all ${payerRelation === pr.key ? 'border-navy-400 bg-navy-50 text-navy-700 shadow-sm' : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50'}`}
+                  >
+                    <pr.icon className="w-4 h-4" />
+                    {pr.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {needOldNotes && (
+          <section className="card-base p-5 animate-slide-up border-l-4 border-l-coral">
+            <h2 className="text-sm font-bold text-coral-700 mb-3 flex items-center gap-2">
+              <FileText className="w-4 h-4" /> 高龄客户风险告知说明
+              <span className="text-[10px] font-normal text-coral-500 bg-coral-50 px-1.5 py-0.5 rounded">必填</span>
             </h2>
-            <textarea className="input-base min-h-[80px] resize-y" placeholder="请填写风险告知、资金来源等补充说明..." value={specialNotes} onChange={(e) => setSpecialNotes(e.target.value)} />
+            <textarea className="input-base min-h-[80px] resize-y" placeholder="请填写风险告知情况、家属签字确认情况..." value={notesOld} onChange={(e) => setNotesOld(e.target.value)} />
           </section>
         )}
 
-        <button className="btn-primary w-full flex items-center justify-center gap-2 py-2.5" onClick={handleSubmit} disabled={!customer}>
-          <Send className="w-4 h-4" /> 提交方案
+        {needCashNotes && (
+          <section className="card-base p-5 animate-slide-up border-l-4 border-l-amber">
+            <h2 className="text-sm font-bold text-amber-700 mb-3 flex items-center gap-2">
+              <FileText className="w-4 h-4" /> 大额现金支付说明
+              <span className="text-[10px] font-normal text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded">必填</span>
+            </h2>
+            <textarea className="input-base min-h-[80px] resize-y" placeholder="请说明大额现金的资金来源，是否建议客户使用银行转账..." value={notesCash} onChange={(e) => setNotesCash(e.target.value)} />
+          </section>
+        )}
+
+        {needFamilyNotes && (
+          <section className="card-base p-5 animate-slide-up border-l-4 border-l-amber">
+            <h2 className="text-sm font-bold text-amber-700 mb-3 flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              {payerRelation === 'company' ? '公司代付说明' : payerRelation === 'other' ? '代付关系说明' : '亲友代付说明'}
+              <span className="text-[10px] font-normal text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded">必填</span>
+            </h2>
+            <textarea
+              className="input-base min-h-[80px] resize-y"
+              placeholder={payerRelation === 'company' ? '请填写公司名称、发票信息、是否已提供营业执照复印件...' : payerRelation === 'other' ? '请说明代付人与客户的具体关系及代付原因...' : '请说明代付人与客户关系、是否已签署代付确认书、是否留存身份证明...'}
+              value={payerRelation === 'other' ? notesOther : notesFamily}
+              onChange={(e) => payerRelation === 'other' ? setNotesOther(e.target.value) : setNotesFamily(e.target.value)}
+            />
+          </section>
+        )}
+
+        <button className={`btn-primary w-full flex items-center justify-center gap-2 py-2.5 ${!canSubmit ? 'opacity-40 cursor-not-allowed' : ''}`} onClick={handleSubmit} disabled={!canSubmit}>
+          <Send className="w-4 h-4" />
+          {highestLevel === 'red' ? '提交方案并申请主管审批' : '提交方案'}
         </button>
 
         {submitted && (
-          <div className="card-base p-4 border-mint-200 bg-mint-50 flex items-center gap-2 text-emerald-700 text-sm animate-fade-in">
-            <CheckCircle2 className="w-5 h-5" /> 方案已提交成功！
+          <div className={`card-base p-4 flex items-center gap-2 text-sm animate-fade-in ${highestLevel === 'red' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-mint-200 bg-mint-50 text-emerald-700'}`}>
+            <CheckCircle2 className="w-5 h-5" />
+            {highestLevel === 'red' ? '方案已提交，已自动进入主管审批列表' : '方案已提交成功，可在话术留痕中生成储值说明'}
           </div>
         )}
       </div>
