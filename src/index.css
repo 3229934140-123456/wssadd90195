@@ -1,0 +1,98 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Noto Sans SC', system-ui, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #C5CCD9 transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 6px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: #C5CCD9;
+    border-radius: 3px;
+  }
+}
+
+@layer components {
+  .risk-badge-green {
+    @apply bg-mint-50 text-emerald-700 border border-mint-200;
+  }
+  .risk-badge-yellow {
+    @apply bg-amber-50 text-amber-700 border border-amber-200;
+  }
+  .risk-badge-red {
+    @apply bg-coral-50 text-coral-700 border border-coral-200;
+  }
+  .risk-dot-green {
+    @apply bg-mint;
+  }
+  .risk-dot-yellow {
+    @apply bg-amber;
+  }
+  .risk-dot-red {
+    @apply bg-coral;
+  }
+  .card-base {
+    @apply bg-white rounded-xl border border-slate-200/80 shadow-card;
+  }
+  .card-hover {
+    @apply hover:shadow-card-hover hover:border-slate-300/80 transition-all duration-200;
+  }
+  .section-title {
+    @apply text-lg font-bold text-navy-700;
+  }
+  .btn-primary {
+    @apply bg-navy-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-navy-600 transition-colors duration-200 shadow-sm;
+  }
+  .btn-danger {
+    @apply bg-coral text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-coral-600 transition-colors duration-200 shadow-sm;
+  }
+  .btn-outline {
+    @apply border border-slate-300 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors duration-200;
+  }
+  .input-base {
+    @apply w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-navy-300 focus:border-navy-400 transition-all duration-200 bg-white;
+  }
+  .level-v1 { @apply bg-slate-100 text-slate-600; }
+  .level-v2 { @apply bg-blue-50 text-blue-600; }
+  .level-v3 { @apply bg-purple-50 text-purple-600; }
+  .level-v4 { @apply bg-amber-50 text-amber-700; }
+  .level-v5 { @apply bg-coral-50 text-coral-700; }
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
