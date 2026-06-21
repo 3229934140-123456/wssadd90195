@@ -34,6 +34,9 @@ export interface RechargeRecord {
 export type PaymentMethod = 'cash' | 'bank_card' | 'wechat' | 'alipay' | 'other';
 export type PayerRelation = 'self' | 'family' | 'friend' | 'company' | 'other';
 
+export type ApprovalStatus = 'none' | 'pending' | 'needs_more' | 'approved' | 'rejected';
+export type ReviewStatus = 'none' | 'pending' | 'needs_more' | 'reviewed';
+
 export interface RechargePlan {
   id: string;
   customerId: string;
@@ -45,9 +48,15 @@ export interface RechargePlan {
   specialNotes: string;
   paymentMethod: PaymentMethod;
   payerRelation: PayerRelation;
+  payerName: string;
+  payerRelationDetail: string;
   riskLevel: 'green' | 'yellow' | 'red';
   riskDetails: RiskDetail[];
-  approvalStatus: 'none' | 'pending' | 'approved' | 'rejected';
+  approvalStatus: ApprovalStatus;
+  approvalRequestNote: string;
+  reviewStatus: ReviewStatus;
+  reviewItems: ReviewItem[];
+  reviewComment?: string;
   createdAt: string;
   status: 'draft' | 'submitted' | 'completed';
 }
@@ -59,6 +68,12 @@ export interface RiskDetail {
   rule: string;
 }
 
+export interface ReviewItem {
+  key: string;
+  label: string;
+  checked: boolean;
+}
+
 export interface ApprovalRecord {
   id: string;
   planId: string;
@@ -66,7 +81,7 @@ export interface ApprovalRecord {
   consultantName: string;
   customerName: string;
   supervisorId: string;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'needs_more' | 'approved' | 'rejected';
   comment: string;
   planAmount: number;
   giftRatio: number;
@@ -122,4 +137,30 @@ export interface Consultant {
   name: string;
   role: 'consultant' | 'supervisor' | 'leader';
   avatar: string;
+}
+
+export type TraceEventType =
+  | 'plan_created'
+  | 'plan_submitted'
+  | 'approval_requested'
+  | 'approval_needs_more'
+  | 'approval_resubmitted'
+  | 'approval_approved'
+  | 'approval_rejected'
+  | 'script_copied'
+  | 'plan_completed'
+  | 'review_pending'
+  | 'review_needs_more'
+  | 'review_reviewed';
+
+export interface TraceEvent {
+  id: string;
+  planId: string;
+  customerId: string;
+  type: TraceEventType;
+  operator: string;
+  operatorRole: string;
+  timestamp: string;
+  content: string;
+  details?: string;
 }

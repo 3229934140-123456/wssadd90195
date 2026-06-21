@@ -32,6 +32,8 @@ export default function Plan() {
   const [validityPeriod, setValidityPeriod] = useState(12);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('bank_card');
   const [payerRelation, setPayerRelation] = useState<PayerRelation>('self');
+  const [payerName, setPayerName] = useState('');
+  const [payerRelationDetail, setPayerRelationDetail] = useState('');
   const [notesOld, setNotesOld] = useState('');
   const [notesCash, setNotesCash] = useState('');
   const [notesFamily, setNotesFamily] = useState('');
@@ -57,17 +59,18 @@ export default function Plan() {
 
   const needOldNotes = risks.some((r) => r.type === '高龄客户');
   const needCashNotes = risks.some((r) => r.type === '大额现金');
-  const needFamilyNotes = risks.some((r) => r.type === '亲友代付' || r.type === '代付关系' || r.type === '公司代付');
+  const isProxyPayment = payerRelation !== 'self';
 
   const allNotesFilled = useMemo(() => {
     if (needOldNotes && !notesOld.trim()) return false;
     if (needCashNotes && !notesCash.trim()) return false;
-    if (needFamilyNotes && !notesFamily.trim() && !notesOther.trim()) {
+    if (isProxyPayment) {
+      if (!payerName.trim()) return false;
       if (payerRelation === 'other' && !notesOther.trim()) return false;
       if (payerRelation !== 'other' && !notesFamily.trim()) return false;
     }
     return true;
-  }, [needOldNotes, needCashNotes, needFamilyNotes, notesOld, notesCash, notesFamily, notesOther, payerRelation]);
+  }, [needOldNotes, needCashNotes, isProxyPayment, notesOld, notesCash, notesFamily, notesOther, payerRelation, payerName]);
 
   const conflictingPackages = useMemo(() => {
     if (!customer) return [];
@@ -86,7 +89,7 @@ export default function Plan() {
     const allNotes = [
       needOldNotes ? `【高龄客户】${notesOld}` : '',
       needCashNotes ? `【大额现金】${notesCash}` : '',
-      needFamilyNotes ? (payerRelation === 'other' ? `【代付关系】${notesOther}` : `【亲友代付】${notesFamily}`) : '',
+      isProxyPayment ? (payerRelation === 'other' ? `【代付关系】${notesOther}` : `【亲友代付】${notesFamily}`) : '',
     ].filter(Boolean).join('\n');
 
     const plan: RechargePlan = {
@@ -100,9 +103,14 @@ export default function Plan() {
       specialNotes: allNotes,
       paymentMethod,
       payerRelation,
+      payerName: payerName.trim(),
+      payerRelationDetail: payerRelationDetail.trim(),
       riskLevel: highestLevel,
       riskDetails: risks,
       approvalStatus: highestLevel === 'red' ? 'pending' : 'none',
+      approvalRequestNote: '',
+      reviewStatus: 'none',
+      reviewItems: [],
       createdAt: new Date().toISOString(),
       status: 'submitted',
     };
@@ -225,6 +233,37 @@ export default function Plan() {
           </div>
         </section>
 
+        {isProxyPayment && (
+          <section className="card-base p-5 animate-slide-up border-l-4 border-l-navy-400">
+            <h2 className="text-sm font-bold text-navy-700 mb-3 flex items-center gap-2">
+              <FileText className="w-4 h-4" /> 代付人信息
+              <span className="text-[10px] font-normal text-navy-500 bg-navy-50 px-1.5 py-0.5 rounded">必填</span>
+            </h2>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">付款人姓名</label>
+                <input
+                  type="text"
+                  className="input-base"
+                  placeholder="请填写付款人真实姓名"
+                  value={payerName}
+                  onChange={(e) => setPayerName(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">代付关系说明</label>
+                <input
+                  type="text"
+                  className="input-base"
+                  placeholder={payerRelation === 'family' ? '如：母子、夫妻、兄妹等' : payerRelation === 'friend' ? '如：朋友、闺蜜、同事等' : payerRelation === 'company' ? '如：公司员工福利、客户赠送等' : '请说明具体关系'}
+                  value={payerRelationDetail}
+                  onChange={(e) => setPayerRelationDetail(e.target.value)}
+                />
+              </div>
+            </div>
+          </section>
+        )}
+
         {needOldNotes && (
           <section className="card-base p-5 animate-slide-up border-l-4 border-l-coral">
             <h2 className="text-sm font-bold text-coral-700 mb-3 flex items-center gap-2">
@@ -245,7 +284,7 @@ export default function Plan() {
           </section>
         )}
 
-        {needFamilyNotes && (
+        {isProxyPayment && (
           <section className="card-base p-5 animate-slide-up border-l-4 border-l-amber">
             <h2 className="text-sm font-bold text-amber-700 mb-3 flex items-center gap-2">
               <FileText className="w-4 h-4" />

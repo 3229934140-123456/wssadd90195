@@ -8,6 +8,11 @@ import {
   Calculator,
   Shield,
   ChevronRight,
+  FileText,
+  CheckSquare,
+  History,
+  RefreshCw,
+  XCircle,
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { consultantStats } from '@/data/mock';
@@ -15,11 +20,45 @@ import { consultantStats } from '@/data/mock';
 const riskBadge = { green: 'risk-badge-green', yellow: 'risk-badge-yellow', red: 'risk-badge-red' };
 const riskLabel = { green: '低风险', yellow: '中风险', red: '高风险' };
 
+const getPlanStatusBadge = (plan: any) => {
+  if (plan.reviewStatus === 'needs_more') {
+    return { cls: 'risk-badge-red', text: '复核待补充', icon: AlertTriangle };
+  }
+  if (plan.reviewStatus === 'pending') {
+    return { cls: 'risk-badge-yellow', text: '待复核', icon: Clock };
+  }
+  if (plan.reviewStatus === 'reviewed') {
+    return { cls: 'risk-badge-green', text: '已复核', icon: CheckCircle2 };
+  }
+  if (plan.approvalStatus === 'needs_more') {
+    return { cls: 'risk-badge-red', text: '审批待补充', icon: RefreshCw };
+  }
+  if (plan.approvalStatus === 'pending') {
+    return { cls: 'risk-badge-yellow', text: '审批中', icon: Clock };
+  }
+  if (plan.approvalStatus === 'approved') {
+    return { cls: 'risk-badge-green', text: '已通过', icon: CheckCircle2 };
+  }
+  if (plan.approvalStatus === 'rejected') {
+    return { cls: 'risk-badge-red', text: '已驳回', icon: XCircle };
+  }
+  if (plan.status === 'completed') {
+    return { cls: 'risk-badge-green', text: '已成交', icon: CheckCircle2 };
+  }
+  if (plan.status === 'submitted') {
+    return { cls: 'risk-badge-yellow', text: '已提交', icon: FileText };
+  }
+  return null;
+};
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { currentConsultant, customers, plans, approvals, reminders } = useAppStore();
 
-  const pendingCount = approvals.filter((a) => a.status === 'pending').length;
+  const pendingApprovals = approvals.filter((a) => a.status === 'pending').length;
+  const needsMoreApprovals = approvals.filter((a) => a.status === 'needs_more').length;
+  const pendingReviews = plans.filter((p) => p.reviewStatus === 'pending').length;
+  const needsMoreReviews = plans.filter((p) => p.reviewStatus === 'needs_more').length;
   const todayReminders = reminders.filter((r) => !r.completed);
   const activeCustomers = customers.length;
   const totalPlans = consultantStats.reduce((s, c) => s + c.totalPlans, 0);
@@ -57,16 +96,18 @@ export default function Dashboard() {
     .slice(0, 6);
 
   const statCards = [
-    { label: '待处理审批', value: pendingCount, icon: AlertTriangle, color: 'text-coral', bg: 'bg-coral-50' },
-    { label: '今日待跟进', value: todayReminders.length, icon: Clock, color: 'text-amber', bg: 'bg-amber-50' },
-    { label: '活跃客户数', value: activeCustomers, icon: Users, color: 'text-navy-700', bg: 'bg-navy-50' },
-    { label: '异常方案占比', value: `${abnormalRate}%`, icon: CheckCircle2, color: 'text-mint', bg: 'bg-mint-50' },
+    { label: '待审批', value: pendingApprovals, icon: Clock, color: 'text-amber', bg: 'bg-amber-50' },
+    { label: '待补充审批', value: needsMoreApprovals, icon: AlertTriangle, color: 'text-coral', bg: 'bg-coral-50' },
+    { label: '待复核', value: pendingReviews, icon: CheckSquare, color: 'text-navy-700', bg: 'bg-navy-50' },
+    { label: '待补充复核', value: needsMoreReviews, icon: RefreshCw, color: 'text-amber', bg: 'bg-amber-50' },
   ];
 
   const quickActions = [
     { label: '客户查询', icon: Search, path: '/customer', color: 'bg-navy-700' },
     { label: '方案试算', icon: Calculator, path: '/plan', color: 'bg-emerald-600' },
     { label: '活动红线', icon: Shield, path: '/redline', color: 'bg-coral' },
+    { label: '主管审批', icon: FileText, path: '/approval', color: 'bg-amber-500' },
+    { label: '话术留痕', icon: History, path: '/trace', color: 'bg-teal-600' },
   ];
 
   return (
@@ -103,17 +144,8 @@ export default function Dashboard() {
             <div className="space-y-3">
               {recentPlans.map((plan) => {
                 const customer = customers.find((c) => c.id === plan.customerId);
-                const approvalBadge = plan.approvalStatus === 'pending'
-                  ? { cls: 'risk-badge-yellow', text: '审批中' }
-                  : plan.approvalStatus === 'approved'
-                    ? { cls: 'risk-badge-green', text: '已通过' }
-                    : plan.approvalStatus === 'rejected'
-                      ? { cls: 'risk-badge-red', text: '已驳回' }
-                      : plan.status === 'completed'
-                        ? { cls: 'risk-badge-green', text: '已成交' }
-                        : plan.status === 'submitted'
-                          ? { cls: 'risk-badge-yellow', text: '已提交' }
-                          : null;
+                const statusBadge = getPlanStatusBadge(plan);
+                const StatusIcon = statusBadge?.icon;
                 return (
                   <div key={plan.id} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
                     <div className="flex items-center gap-3">
@@ -124,9 +156,10 @@ export default function Dashboard() {
                       <span className="text-xs text-slate-400">
                         ¥{(plan.amount / 10000).toFixed(1)}万 · 赠{(plan.giftRatio * 100).toFixed(0)}%
                       </span>
-                      {approvalBadge && (
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${approvalBadge.cls}`}>
-                          {approvalBadge.text}
+                      {statusBadge && (
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${statusBadge.cls} flex items-center gap-1`}>
+                          {StatusIcon && <StatusIcon className="w-2.5 h-2.5" />}
+                          {statusBadge.text}
                         </span>
                       )}
                     </div>
@@ -169,7 +202,10 @@ export default function Dashboard() {
               <span className="text-sm text-slate-600 flex-1 truncate">{act.title}</span>
               <span className={`px-2 py-0.5 rounded text-xs font-medium ${riskBadge[act.riskLevel]}`}>
                 {act.type === 'approval'
-                  ? act.status === 'pending' ? '待审批' : act.status === 'approved' ? '已通过' : '已驳回'
+                  ? act.status === 'needs_more' ? '待补充'
+                  : act.status === 'pending' ? '待审批'
+                  : act.status === 'approved' ? '已通过'
+                  : '已驳回'
                   : act.status === 'completed' ? '已完成' : '待跟进'}
               </span>
               <span className="text-xs text-slate-400 flex-shrink-0">

@@ -8,6 +8,11 @@ import type {
   Consultant,
   PaymentMethod,
   PayerRelation,
+  ReviewItem,
+  TraceEvent,
+  TraceEventType,
+  ReviewStatus,
+  ApprovalStatus,
 } from '@/types';
 import {
   customers as mockCustomers,
@@ -17,6 +22,7 @@ import {
   consultants as mockConsultants,
   activityRules,
   projectList,
+  traceEvents as mockTraceEvents,
 } from '@/data/mock';
 
 interface AppState {
@@ -25,16 +31,30 @@ interface AppState {
   plans: RechargePlan[];
   approvals: ApprovalRecord[];
   reminders: FollowUpReminder[];
+  traceEvents: TraceEvent[];
   selectedCustomerId: string | null;
 
   setSelectedCustomerId: (id: string | null) => void;
   addPlan: (plan: RechargePlan) => void;
   updatePlan: (id: string, updates: Partial<RechargePlan>) => void;
+  resubmitPlan: (planId: string, approvalRequestNote: string) => void;
   markPlanCompleted: (planId: string) => void;
+  requestMoreInfo: (approvalId: string, comment: string) => void;
   approvePlan: (approvalId: string, approved: boolean, comment: string) => void;
+  resubmitForReview: (planId: string) => void;
+  reviewPlan: (planId: string, items: ReviewItem[], passed: boolean, comment: string) => void;
+  toggleReviewItem: (planId: string, itemKey: string, checked: boolean) => void;
   completeReminder: (id: string) => void;
+  addTraceEvent: (
+    planId: string,
+    customerId: string,
+    type: TraceEventType,
+    content: string,
+    details?: string
+  ) => void;
   searchCustomers: (phone: string) => Customer[];
   getCustomerById: (id: string) => Customer | undefined;
+  getEventsForCustomer: (customerId: string) => TraceEvent[];
   validatePlan: (
     customerId: string,
     amount: number,
@@ -126,7 +146,7 @@ function validatePlanRisks(
     });
   }
 
-  if ((payerRelation === 'family' || payerRelation === 'friend') && amount >= 10000) {
+  if (payerRelation === 'family' || payerRelation === 'friend') {
     risks.push({
       type: '亲友代付',
       level: 'yellow',
@@ -196,12 +216,23 @@ function validatePlanRisks(
   return risks;
 }
 
+function defaultReviewItems(): ReviewItem[] {
+  return [
+    { key: 'cash_source', label: '现金来源说明', checked: false },
+    { key: 'proxy_agreement', label: '代付协议/确认书', checked: false },
+    { key: 'customer_sign', label: '客户签字确认', checked: false },
+    { key: 'elder_risk_notice', label: '高龄客户风险告知', checked: false },
+    { key: 'id_verified', label: '付款人身份核验', checked: false },
+  ];
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   currentConsultant: mockConsultants[3],
   customers: mockCustomers,
   plans: mockPlans,
   approvals: mockApprovals,
   reminders: mockReminders,
+  traceEvents: mockTraceEvents,
   selectedCustomerId: null,
 
   setSelectedCustomerId: (id) => set({ selectedCustomerId: id }),
@@ -209,10 +240,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   addPlan: (plan) =>
     set((s) => {
       const customer = s.customers.find((c) => c.id === plan.customerId);
+      const consultant = s.currentConsultant;
       const newPlans = [...s.plans, plan];
       let newApprovals = s.approvals;
+      let newEvents = s.traceEvents;
+      const now = new Date().toISOString();
+
+      newEvents = [
+        ...newEvents,
+        {
+          id: `ev_${Date.now()}_1`,
+          planId: plan.id,
+          customerId: plan.customerId,
+          type: 'plan_submitted' as TraceEventType,
+          operator: consultant.name,
+          operatorRole: consultant.role === 'supervisor' ? '主管' : '咨询师',
+          timestamp: now,
+          content: `提交了储值方案（¥${plan.amount.toLocaleString()} · 赠${(plan.giftRatio * 100).toFixed(0)}%）`,
+          details: `绑定项目：${plan.boundProjects.join('、') || '通用'}`,
+        },
+      ];
+
       if (plan.riskLevel === 'red' && plan.approvalStatus === 'pending') {
-        const consultant = s.currentConsultant;
         const approval: ApprovalRecord = {
           id: `ap_${Date.now()}`,
           planId: plan.id,
@@ -225,11 +274,25 @@ export const useAppStore = create<AppState>((set, get) => ({
           planAmount: plan.amount,
           giftRatio: plan.giftRatio,
           riskLevel: plan.riskLevel,
-          createdAt: plan.createdAt,
+          createdAt: now,
         };
         newApprovals = [...s.approvals, approval];
+        newEvents = [
+          ...newEvents,
+          {
+            id: `ev_${Date.now()}_2`,
+            planId: plan.id,
+            customerId: plan.customerId,
+            type: 'approval_requested' as TraceEventType,
+            operator: '系统',
+            operatorRole: '系统',
+            timestamp: now,
+            content: `检测到高风险，自动提交主管审批`,
+          },
+        ];
       }
-      return { plans: newPlans, approvals: newApprovals };
+
+      return { plans: newPlans, approvals: newApprovals, traceEvents: newEvents };
     }),
 
   updatePlan: (id, updates) =>
@@ -237,19 +300,130 @@ export const useAppStore = create<AppState>((set, get) => ({
       plans: s.plans.map((p) => (p.id === id ? { ...p, ...updates } : p)),
     })),
 
+  resubmitPlan: (planId, approvalRequestNote) =>
+    set((s) => {
+      const plan = s.plans.find((p) => p.id === planId);
+      const consultant = s.currentConsultant;
+      const now = new Date().toISOString();
+      const event: TraceEvent = {
+        id: `ev_${Date.now()}`,
+        planId,
+        customerId: plan?.customerId ?? '',
+        type: 'approval_resubmitted' as TraceEventType,
+        operator: consultant.name,
+        operatorRole: consultant.role === 'supervisor' ? '主管' : '咨询师',
+        timestamp: now,
+        content: '补充材料后重新提交审批',
+        details: approvalRequestNote || undefined,
+      };
+      return {
+        plans: s.plans.map((p) =>
+          p.id === planId
+            ? { ...p, approvalStatus: 'pending' as ApprovalStatus, approvalRequestNote }
+            : p
+        ),
+        approvals: s.approvals.map((a) =>
+          a.planId === planId ? { ...a, status: 'pending', comment: approvalRequestNote } : a
+        ),
+        traceEvents: [...s.traceEvents, event],
+      };
+    }),
+
   markPlanCompleted: (planId) =>
-    set((s) => ({
-      plans: s.plans.map((p) =>
-        p.id === planId ? { ...p, status: 'completed' as const } : p
-      ),
-    })),
+    set((s) => {
+      const plan = s.plans.find((p) => p.id === planId);
+      const consultant = s.currentConsultant;
+      const now = new Date().toISOString();
+      const event: TraceEvent = {
+        id: `ev_${Date.now()}`,
+        planId,
+        customerId: plan?.customerId ?? '',
+        type: 'plan_completed' as TraceEventType,
+        operator: consultant.name,
+        operatorRole: consultant.role === 'supervisor' ? '主管' : '咨询师',
+        timestamp: now,
+        content: '方案已成交',
+      };
+      const reviewEvent: TraceEvent = {
+        id: `ev_${Date.now()}_r`,
+        planId,
+        customerId: plan?.customerId ?? '',
+        type: 'review_pending' as TraceEventType,
+        operator: '系统',
+        operatorRole: '系统',
+        timestamp: now,
+        content: '已进入收银台复核队列',
+      };
+      return {
+        plans: s.plans.map((p) =>
+          p.id === planId
+            ? {
+                ...p,
+                status: 'completed' as const,
+                reviewStatus: 'pending' as ReviewStatus,
+                reviewItems: defaultReviewItems(),
+              }
+            : p
+        ),
+        traceEvents: [...s.traceEvents, event, reviewEvent],
+      };
+    }),
+
+  requestMoreInfo: (approvalId, comment) =>
+    set((s) => {
+      const approval = s.approvals.find((a) => a.id === approvalId);
+      const supervisor = s.currentConsultant;
+      const now = new Date().toISOString();
+      const event: TraceEvent = {
+        id: `ev_${Date.now()}`,
+        planId: approval?.planId ?? '',
+        customerId: approval?.customerName ? s.customers.find((c) => c.name === approval.customerName)?.id ?? '' : '',
+        type: 'approval_needs_more' as TraceEventType,
+        operator: supervisor.name,
+        operatorRole: '主管',
+        timestamp: now,
+        content: '主管要求补充材料',
+        details: comment,
+      };
+      return {
+        approvals: s.approvals.map((a) =>
+          a.id === approvalId
+            ? { ...a, status: 'needs_more' as const, comment, resolvedAt: now }
+            : a
+        ),
+        plans: approval
+          ? s.plans.map((p) =>
+              p.id === approval.planId
+                ? { ...p, approvalStatus: 'needs_more' as ApprovalStatus }
+                : p
+            )
+          : s.plans,
+        traceEvents: [...s.traceEvents, event],
+      };
+    }),
 
   approvePlan: (approvalId, approved, comment) =>
     set((s) => {
       const approval = s.approvals.find((a) => a.id === approvalId);
+      const supervisor = s.currentConsultant;
+      const now = new Date().toISOString();
+      const eventType = approved
+        ? ('approval_approved' as TraceEventType)
+        : ('approval_rejected' as TraceEventType);
+      const event: TraceEvent = {
+        id: `ev_${Date.now()}`,
+        planId: approval?.planId ?? '',
+        customerId: approval?.customerName ? s.customers.find((c) => c.name === approval.customerName)?.id ?? '' : '',
+        type: eventType,
+        operator: supervisor.name,
+        operatorRole: '主管',
+        timestamp: now,
+        content: approved ? '主管审批通过' : '主管驳回方案',
+        details: comment || undefined,
+      };
       const newPlanStatus = approved
-        ? ('approved' as const)
-        : ('rejected' as const);
+        ? ('approved' as ApprovalStatus)
+        : ('rejected' as ApprovalStatus);
       return {
         approvals: s.approvals.map((a) =>
           a.id === approvalId
@@ -257,19 +431,93 @@ export const useAppStore = create<AppState>((set, get) => ({
                 ...a,
                 status: approved ? ('approved' as const) : ('rejected' as const),
                 comment,
-                resolvedAt: new Date().toISOString(),
+                resolvedAt: now,
               }
             : a
         ),
         plans: approval
           ? s.plans.map((p) =>
-              p.id === approval.planId
-                ? { ...p, approvalStatus: newPlanStatus }
-                : p
+              p.id === approval.planId ? { ...p, approvalStatus: newPlanStatus } : p
             )
           : s.plans,
+        traceEvents: [...s.traceEvents, event],
       };
     }),
+
+  resubmitForReview: (planId) =>
+    set((s) => {
+      const plan = s.plans.find((p) => p.id === planId);
+      const consultant = s.currentConsultant;
+      const now = new Date().toISOString();
+      const event: TraceEvent = {
+        id: `ev_${Date.now()}`,
+        planId,
+        customerId: plan?.customerId ?? '',
+        type: 'review_pending' as TraceEventType,
+        operator: consultant.name,
+        operatorRole: consultant.role === 'supervisor' ? '主管' : '咨询师',
+        timestamp: now,
+        content: '补充材料后重新提交收银台复核',
+      };
+      return {
+        plans: s.plans.map((p) =>
+          p.id === planId
+            ? {
+                ...p,
+                reviewStatus: 'pending' as ReviewStatus,
+                reviewItems: defaultReviewItems(),
+              }
+            : p
+        ),
+        traceEvents: [...s.traceEvents, event],
+      };
+    }),
+
+  reviewPlan: (planId, items, passed, comment) =>
+    set((s) => {
+      const plan = s.plans.find((p) => p.id === planId);
+      const reviewer = s.currentConsultant;
+      const now = new Date().toISOString();
+      const eventType = passed
+        ? ('review_reviewed' as TraceEventType)
+        : ('review_needs_more' as TraceEventType);
+      const event: TraceEvent = {
+        id: `ev_${Date.now()}`,
+        planId,
+        customerId: plan?.customerId ?? '',
+        type: eventType,
+        operator: reviewer.name,
+        operatorRole: '收银台',
+        timestamp: now,
+        content: passed ? '收银台复核通过' : '收银台要求补充材料',
+        details: comment || undefined,
+      };
+      const newReviewStatus = passed
+        ? ('reviewed' as ReviewStatus)
+        : ('needs_more' as ReviewStatus);
+      return {
+        plans: s.plans.map((p) =>
+          p.id === planId
+            ? { ...p, reviewStatus: newReviewStatus, reviewItems: items, reviewComment: comment }
+            : p
+        ),
+        traceEvents: [...s.traceEvents, event],
+      };
+    }),
+
+  toggleReviewItem: (planId, itemKey, checked) =>
+    set((s) => ({
+      plans: s.plans.map((p) =>
+        p.id === planId
+          ? {
+              ...p,
+              reviewItems: p.reviewItems.map((item) =>
+                item.key === itemKey ? { ...item, checked } : item
+              ),
+            }
+          : p
+      ),
+    })),
 
   completeReminder: (id) =>
     set((s) => ({
@@ -277,6 +525,23 @@ export const useAppStore = create<AppState>((set, get) => ({
         r.id === id ? { ...r, completed: true } : r
       ),
     })),
+
+  addTraceEvent: (planId, customerId, type, content, details) =>
+    set((s) => {
+      const operator = s.currentConsultant;
+      const event: TraceEvent = {
+        id: `ev_${Date.now()}`,
+        planId,
+        customerId,
+        type,
+        operator: operator.name,
+        operatorRole: operator.role === 'supervisor' ? '主管' : operator.role === 'leader' ? '负责人' : '咨询师',
+        timestamp: new Date().toISOString(),
+        content,
+        details,
+      };
+      return { traceEvents: [...s.traceEvents, event] };
+    }),
 
   searchCustomers: (phone) => {
     const { customers } = get();
@@ -287,6 +552,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   getCustomerById: (id) => {
     const { customers } = get();
     return customers.find((c) => c.id === id);
+  },
+
+  getEventsForCustomer: (customerId) => {
+    const { traceEvents } = get();
+    return traceEvents
+      .filter((e) => e.customerId === customerId)
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   },
 
   validatePlan: (
